@@ -58,7 +58,7 @@ class ProEncoder:
             self.k_mer_struct_map[self.k_mer_struct_list[i]] = i
 
         # table for amino acid clusters
-        self.transtable = string.maketrans(self.pro_intab, self.pro_outtab)
+        self.transtable = str.maketrans(self.pro_intab, self.pro_outtab)
 
 
         # print(len(self.k_mer_list))

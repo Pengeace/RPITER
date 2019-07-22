@@ -355,7 +355,7 @@ out.write('\n\nK-fold cross validation processes:\n')
 for fold in range(K_FOLD):
     train = [i for i in range(sample_num) if i%K_FOLD !=fold]
     test = [i for i in range(sample_num) if i%K_FOLD ==fold]
-    print(test)
+
     # generate train and test data
     X_train_conjoint = [X[0][0][train], X[0][1][train]]
     X_train_conjoint_struct = [X[1][0][train], X[1][1][train]]
