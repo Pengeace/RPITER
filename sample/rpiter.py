@@ -1,5 +1,6 @@
 import math
 import os
+import sys
 import time
 from argparse import ArgumentParser
 from functools import reduce
@@ -24,10 +25,8 @@ from utils.stacked_auto_encoder import train_auto_encoder
 
 # default program settings
 DATA_SET = 'RPI488'
-DATA_BASE_PATH = '../data/'
-RESULT_BASE_PATH = '../result/'
 TIME_FORMAT = "-%y-%m-%d-%H-%M-%S"
-INI_PATH = './utils/data_set_settings.ini'
+
 WINDOW_P_UPLIMIT = 3
 WINDOW_P_STRUCT_UPLIMIT = 3
 WINDOW_R_UPLIMIT = 4
@@ -47,6 +46,14 @@ MIN_DELTA = 0.0
 SHUFFLE = True
 VERBOSE = 2
 
+# get the path of rpiter.py
+script_dir, script_name = os.path.split(os.path.abspath(sys.argv[0]))
+parent_dir = os.path.dirname(script_dir)
+# set paths of data, results and program parameters
+DATA_BASE_PATH = parent_dir + '/data/'
+RESULT_BASE_PATH = parent_dir + '/result/'
+INI_PATH = script_dir + '/utils/data_set_settings.ini'
+
 metrics_whole = {'RPITER': np.zeros(6),
                  'Conjoint-SAE': np.zeros(6), 'Conjoint-Struct-SAE': np.zeros(6),
                  'Conjoint-CNN': np.zeros(6), 'Conjoint-Struct-CNN': np.zeros(6),
@@ -64,8 +71,12 @@ config = tf.ConfigProto()
 config.gpu_options.allow_growth=True
 sess = tf.Session(config=config)
 
+# available gpu settings
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-# result save path
+
+
+# result save path setting
 result_save_path = RESULT_BASE_PATH + DATA_SET + "/" + DATA_SET + time.strftime(TIME_FORMAT, time.localtime()) + "/"
 if not os.path.exists(result_save_path):
     os.mkdir(result_save_path)
@@ -292,7 +303,7 @@ if DATA_SET in ['RPI369', 'RPI488', 'RPI1807', 'RPI2241', 'NPInter']:
     MONITOR = config.get(DATA_SET, 'MONITOR')
     MIN_DELTA = config.getfloat(DATA_SET, 'MIN_DELTA')
 
-# write program parameter settings to  result file
+# write program parameter settings to result file
 settings = (
     """# Analyze data set {}\n
 Program parameters:
@@ -349,7 +360,6 @@ X, y = pre_process_data(samples=samples)
 # K-fold CV processes
 
 # skf = StratifiedKFold(n_splits=K_FOLD, random_state=RANDOM_SEED, shuffle=True)
-# fold = 0
 print('\n\nK-fold cross validation processes:\n')
 out.write('\n\nK-fold cross validation processes:\n')
 for fold in range(K_FOLD):
