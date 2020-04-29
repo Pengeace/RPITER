@@ -94,13 +94,6 @@ def conjoint_sae(encoders_protein, encoders_rna, pro_coding_length, rna_coding_l
     x_out_conjoint = concatenate([xp_encoder, xr_encoder])
     x_out_conjoint = Dense(128, kernel_initializer='random_uniform', activation='relu')(x_out_conjoint)
     x_out_conjoint = BatchNormalization()(x_out_conjoint)
-    # x_out_conjoint = Dropout(0.3)(x_out_conjoint)
-    # x_out_conjoint = Dense(128, activation='relu')(x_out_conjoint)
-    # x_out_conjoint = BatchNormalization()(x_out_conjoint)
-    # x_out_conjoint = Dropout(0.2)(x_out_conjoint)
-    # x_out_conjoint = Dense(64, activation='relu')(x_out_conjoint)
-    # x_out_conjoint = BatchNormalization()(x_out_conjoint)
-    # x_out_conjoint = Dropout(0.2)(x_out_conjoint)
     x_out_conjoint = Dense(64, kernel_initializer='random_uniform', activation='relu')(x_out_conjoint)
     y_conjoint = Dense(2, activation='softmax')(x_out_conjoint)
 

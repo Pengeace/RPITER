@@ -8,7 +8,7 @@ from functools import reduce
 import configparser
 import numpy as np
 import tensorflow as tf
-from keras.callbacks import ModelCheckpoint, EarlyStopping
+from keras import optimizers
 from keras.layers import Dense, concatenate, BatchNormalization
 from keras.layers import Dropout
 from keras.models import Model
@@ -18,10 +18,11 @@ from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
-from utils.acc_history_plot import AccHistoryPlot
+from utils.callbacks import AccHistoryPlot, EarlyStopping
 from utils.basic_modules import conjoint_cnn, conjoint_sae
 from utils.sequence_encoder import ProEncoder, RNAEncoder
 from utils.stacked_auto_encoder import train_auto_encoder
+
 
 # default program settings
 DATA_SET = 'RPI488'
@@ -40,6 +41,9 @@ SECOND_TRAIN_EPOCHS = [20, 20, 20, 20, 10]
 PATIENCES = [10, 10, 10, 10, 10]
 FIRST_OPTIMIZER = 'adam'
 SECOND_OPTIMIZER = 'sgd'
+SGD_LEARNING_RATE = 0.001
+ADAM_LEARNING_RATE = 0.001
+FREEZE_SUB_MODELS = True
 CODING_FREQUENCY = True
 MONITOR = 'acc'
 MIN_DELTA = 0.0
@@ -56,8 +60,7 @@ INI_PATH = script_dir + '/utils/data_set_settings.ini'
 
 metrics_whole = {'RPITER': np.zeros(6),
                  'Conjoint-SAE': np.zeros(6), 'Conjoint-Struct-SAE': np.zeros(6),
-                 'Conjoint-CNN': np.zeros(6), 'Conjoint-Struct-CNN': np.zeros(6),
-}
+                 'Conjoint-CNN': np.zeros(6), 'Conjoint-Struct-CNN': np.zeros(6)}
 
 parser = ArgumentParser()
 parser.add_argument('-d', '--dataset', type=str, help='The dataset you want to process.')
@@ -66,17 +69,22 @@ if args.dataset != None:
     DATA_SET = args.dataset
 print("Dataset: %s" % DATA_SET)
 
-# gpu memory growth for tensorflow
-config = tf.ConfigProto()
-config.gpu_options.allow_growth=True
-sess = tf.Session(config=config)
+# gpu memory growth manner for TensorFlow
+# to consider version compatibility
+if tf.__version__< '2.0':
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+else:
+    config = tf.compat.v1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.compat.v1.Session(config=config)
 
-# available gpu settings
+# set visible gpu if needed
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
-
-# result save path setting
+# set result save path
 result_save_path = RESULT_BASE_PATH + DATA_SET + "/" + DATA_SET + time.strftime(TIME_FORMAT, time.localtime()) + "/"
 if not os.path.exists(result_save_path):
     os.mkdir(result_save_path)
@@ -114,7 +122,7 @@ def read_data_seq(path):
     return seq_dict
 
 
-# calculate the 6 metrics of Acc, Sn, Sp, Precision, MCC and AUC
+# calculate the six metrics of Acc, Sn, Sp, Precision, MCC and AUC
 def calc_metrics(y_label, y_proba):
     con_matrix = confusion_matrix(y_label, [1 if x >= 0.5 else 0 for x in y_proba])
     TN = float(con_matrix[0][0])
@@ -123,10 +131,10 @@ def calc_metrics(y_label, y_proba):
     TP = float(con_matrix[1][1])
     P = TP + FN
     N = TN + FP
-    Sn = TP / P
-    Sp = TN / N
-    Acc = (TP + TN) / (P + N)
-    Pre = (TP) / (TP + FP)
+    Sn = TP / P if P > 0 else 0
+    Sp = TN / N if N > 0 else 0
+    Acc = (TP + TN) / (P + N) if (P + N) > 0 else 0
+    Pre = (TP) / (TP + FP) if (TP+FP) > 0 else 0
     MCC = 0
     tmp = math.sqrt((TP + FP) * (TP + FN)) * math.sqrt((TN + FP) * (TN + FN))
     if tmp != 0:
@@ -257,15 +265,27 @@ def sum_power(num, bottom, top):
     return reduce(lambda x, y: x + y, map(lambda x: num ** x, range(bottom, top + 1)))
 
 
-def get_callback_list(patience, weight_path, result_path, stage, fold, X_test, y_test):
-    earlystopping = EarlyStopping(monitor='acc', min_delta=MIN_DELTA, patience=patience, verbose=1,
-                                  mode='auto')
-    checkpoint = ModelCheckpoint(weight_path, monitor=MONITOR, verbose=1, save_best_only=True,
-                                 save_weights_only=True, mode='auto', period=1)
+def get_callback_list(patience, result_path, stage, fold, X_test, y_test):
+    earlystopping = EarlyStopping(monitor=MONITOR, min_delta=MIN_DELTA, patience=patience, verbose=1,
+                                  mode='auto', restore_best_weights=True)
     acchistory = AccHistoryPlot([stage, fold], [X_test, y_test], data_name=DATA_SET,
-                                result_save_path=result_path, validate=0, plot_epoch_gap=5)
+                                result_save_path=result_path, validate=0, plot_epoch_gap=10)
 
-    return [acchistory, earlystopping, checkpoint]
+    return [acchistory, earlystopping]
+
+
+def get_optimizer(opt_name):
+    if opt_name == 'sgd':
+        return optimizers.sgd(lr=SGD_LEARNING_RATE, momentum=0.5)
+    elif opt_name == 'adam':
+        return optimizers.adam(lr=ADAM_LEARNING_RATE)
+    else:
+        return opt_name
+
+
+def control_model_trainable(model, trainable):
+    for layer in model.layers:
+        layer.trainable = trainable
 
 
 def get_auto_encoders(X_train, X_test, batch_size=BATCH_SIZE):
@@ -299,6 +319,9 @@ if DATA_SET in ['RPI369', 'RPI488', 'RPI1807', 'RPI2241', 'NPInter']:
                            config.get(DATA_SET, 'SECOND_TRAIN_EPOCHS').replace('[', '').replace(']', '').split(',')]
     FIRST_OPTIMIZER = config.get(DATA_SET, 'FIRST_OPTIMIZER')
     SECOND_OPTIMIZER = config.get(DATA_SET, 'SECOND_OPTIMIZER')
+    SGD_LEARNING_RATE = config.getfloat(DATA_SET, 'SGD_LEARNING_RATE')
+    ADAM_LEARNING_RATE = config.getfloat(DATA_SET, 'ADAM_LEARNING_RATE')
+    FREEZE_SUB_MODELS = config.getboolean(DATA_SET, 'FREEZE_SUB_MODELS')
     CODING_FREQUENCY = config.getboolean(DATA_SET, 'CODING_FREQUENCY')
     MONITOR = config.get(DATA_SET, 'MONITOR')
     MIN_DELTA = config.getfloat(DATA_SET, 'MIN_DELTA')
@@ -320,14 +343,17 @@ SECOND_TRAIN_EPOCHS = {},
 PATIENCES = {},
 FIRST_OPTIMIZER = {},
 SECOND_OPTIMIZER = {},
+SGD_LEARNING_RATE = {},
+ADAM_LEARNING_RATE = {},
+FREEZE_SUB_MODELS = {},
 CODING_FREQUENCY = {},
 MONITOR = {},
 MIN_DELTA = {},
     """.format(DATA_SET, WINDOW_P_UPLIMIT, WINDOW_R_UPLIMIT, WINDOW_P_STRUCT_UPLIMIT,
                WINDOW_R_STRUCT_UPLIMIT, VECTOR_REPETITION_CNN,
                RANDOM_SEED, K_FOLD, BATCH_SIZE, FIRST_TRAIN_EPOCHS, SECOND_TRAIN_EPOCHS, PATIENCES, FIRST_OPTIMIZER,
-               SECOND_OPTIMIZER,
-               CODING_FREQUENCY, MONITOR, MIN_DELTA)
+               SECOND_OPTIMIZER, SGD_LEARNING_RATE, ADAM_LEARNING_RATE,
+               FREEZE_SUB_MODELS, CODING_FREQUENCY, MONITOR, MIN_DELTA)
 )
 out.write(settings)
 
@@ -339,7 +365,7 @@ RNA_STRUCT_CODING_LENGTH = sum_power(4, 1, WINDOW_R_UPLIMIT) + sum_power(2, 1, W
 # read rna-protein pairs and sequences from data files
 pos_pairs, neg_pairs, pro_seqs, rna_seqs, pro_structs, rna_structs = load_data(DATA_SET)
 
-# sequence encoder instance
+# sequence encoder instances
 PE = ProEncoder(WINDOW_P_UPLIMIT, WINDOW_P_STRUCT_UPLIMIT, CODING_FREQUENCY, VECTOR_REPETITION_CNN)
 RE = RNAEncoder(WINDOW_R_UPLIMIT, WINDOW_R_STRUCT_UPLIMIT, CODING_FREQUENCY, VECTOR_REPETITION_CNN)
 
@@ -351,7 +377,7 @@ samples += coding_pairs(neg_pairs, pro_seqs, rna_seqs, pro_structs, rna_structs,
 negative_sample_number = len(samples) - positive_sample_number
 sample_num = len(samples)
 
-# sample numbers for the positive and the negative
+# positive and negative sample numbers
 print('\nPos samples: {}, Neg samples: {}.\n'.format(positive_sample_number, negative_sample_number))
 out.write('\nPos samples: {}, Neg samples: {}.\n'.format(positive_sample_number, negative_sample_number))
 
@@ -405,11 +431,11 @@ for fold in range(K_FOLD):
 
     # create model
     model_conjoint_cnn = conjoint_cnn(PRO_CODING_LENGTH, RNA_CODING_LENGTH, VECTOR_REPETITION_CNN)
-    callbacks = get_callback_list(PATIENCES[0], model_weight_path, result_save_path, stage, fold, X_test_conjoint_cnn,
+    callbacks = get_callback_list(PATIENCES[0], result_save_path, stage, fold, X_test_conjoint_cnn,
                                   y_test)
 
     # first train
-    model_conjoint_cnn.compile(loss='categorical_crossentropy', optimizer=FIRST_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_cnn.compile(loss='categorical_crossentropy', optimizer=get_optimizer(FIRST_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = False
     model_conjoint_cnn.fit(x=X_train_conjoint_cnn,
                            y=y_train,
@@ -417,11 +443,10 @@ for fold in range(K_FOLD):
                            batch_size=BATCH_SIZE,
                            verbose=VERBOSE,
                            shuffle=SHUFFLE,
-                           callbacks=callbacks)
-    model_conjoint_cnn.load_weights(model_weight_path)
+                           callbacks=[callbacks[0]])
 
     # second train
-    model_conjoint_cnn.compile(loss='categorical_crossentropy', optimizer=SECOND_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_cnn.compile(loss='categorical_crossentropy', optimizer=get_optimizer(SECOND_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = True
     model_conjoint_cnn.fit(x=X_train_conjoint_cnn,
                            y=y_train,
@@ -430,7 +455,6 @@ for fold in range(K_FOLD):
                            verbose=VERBOSE,
                            shuffle=SHUFFLE,
                            callbacks=callbacks)
-    model_conjoint_cnn.load_weights(model_weight_path)
 
     # test
     y_test_predict = model_conjoint_cnn.predict(X_test_conjoint_cnn)
@@ -448,11 +472,11 @@ for fold in range(K_FOLD):
 
     # create model
     model_conjoint_struct_cnn = conjoint_cnn(PRO_STRUCT_CODING_LENGTH, RNA_STRUCT_CODING_LENGTH, VECTOR_REPETITION_CNN)
-    callbacks = get_callback_list(PATIENCES[1], model_weight_path, result_save_path, stage, fold,
+    callbacks = get_callback_list(PATIENCES[1], result_save_path, stage, fold,
                                   X_test_conjoint_struct_cnn, y_test)
 
     # first train
-    model_conjoint_struct_cnn.compile(loss='categorical_crossentropy', optimizer=FIRST_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_struct_cnn.compile(loss='categorical_crossentropy', optimizer=get_optimizer(FIRST_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = False
     model_conjoint_struct_cnn.fit(x=X_train_conjoint_struct_cnn,
                                   y=y_train,
@@ -460,11 +484,10 @@ for fold in range(K_FOLD):
                                   batch_size=BATCH_SIZE,
                                   verbose=VERBOSE,
                                   shuffle=SHUFFLE,
-                                  callbacks=callbacks)
-    model_conjoint_struct_cnn.load_weights(model_weight_path)
+                                  callbacks=[callbacks[0]])
 
     # second train
-    model_conjoint_struct_cnn.compile(loss='categorical_crossentropy', optimizer=SECOND_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_struct_cnn.compile(loss='categorical_crossentropy', optimizer=get_optimizer(SECOND_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = True
     model_conjoint_struct_cnn.fit(x=X_train_conjoint_struct_cnn,
                                   y=y_train,
@@ -473,7 +496,6 @@ for fold in range(K_FOLD):
                                   verbose=VERBOSE,
                                   shuffle=SHUFFLE,
                                   callbacks=callbacks)
-    model_conjoint_struct_cnn.load_weights(model_weight_path)
 
     # test
     y_test_predict = model_conjoint_struct_cnn.predict(X_test_conjoint_struct_cnn)
@@ -493,11 +515,11 @@ for fold in range(K_FOLD):
     # create model
     encoders_pro, encoders_rna = get_auto_encoders(X_train_conjoint, X_test_conjoint)
     model_conjoint_sae = conjoint_sae(encoders_pro, encoders_rna, PRO_CODING_LENGTH, RNA_CODING_LENGTH)
-    callbacks = get_callback_list(PATIENCES[2], model_weight_path, result_save_path, stage, fold, X_test_conjoint,
+    callbacks = get_callback_list(PATIENCES[2], result_save_path, stage, fold, X_test_conjoint,
                                   y_test)
 
     # first train
-    model_conjoint_sae.compile(loss='categorical_crossentropy', optimizer=FIRST_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_sae.compile(loss='categorical_crossentropy', optimizer=get_optimizer(FIRST_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = False
     model_conjoint_sae.fit(x=X_train_conjoint,
                            y=y_train,
@@ -505,11 +527,10 @@ for fold in range(K_FOLD):
                            batch_size=BATCH_SIZE,
                            verbose=VERBOSE,
                            shuffle=SHUFFLE,
-                           callbacks=callbacks)
-    model_conjoint_sae.load_weights(model_weight_path)
+                           callbacks=[callbacks[0]])
 
     # second train
-    model_conjoint_sae.compile(loss='categorical_crossentropy', optimizer=SECOND_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_sae.compile(loss='categorical_crossentropy', optimizer=get_optimizer(SECOND_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = True
     model_conjoint_sae.fit(x=X_train_conjoint,
                            y=y_train,
@@ -517,8 +538,7 @@ for fold in range(K_FOLD):
                            batch_size=BATCH_SIZE,
                            verbose=VERBOSE,
                            shuffle=SHUFFLE,
-                           callbacks=callbacks)
-    model_conjoint_sae.load_weights(model_weight_path)
+                           callbacks=[callbacks[0]])
 
     # test
     y_test_predict = model_conjoint_sae.predict(X_test_conjoint)
@@ -538,12 +558,12 @@ for fold in range(K_FOLD):
     encoders_pro, encoders_rna = get_auto_encoders(X_train_conjoint_struct, X_test_conjoint_struct)
     model_conjoint_struct_sae = conjoint_sae(encoders_pro, encoders_rna, PRO_STRUCT_CODING_LENGTH,
                                              RNA_STRUCT_CODING_LENGTH)
-    callbacks = get_callback_list(PATIENCES[3], model_weight_path, result_save_path, stage, fold,
+    callbacks = get_callback_list(PATIENCES[3], result_save_path, stage, fold,
                                   X_test_conjoint_struct,
                                   y_test)
 
     # first train
-    model_conjoint_struct_sae.compile(loss='categorical_crossentropy', optimizer=FIRST_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_struct_sae.compile(loss='categorical_crossentropy', optimizer=get_optimizer(FIRST_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = False
     model_conjoint_struct_sae.fit(x=X_train_conjoint_struct,
                                   y=y_train,
@@ -551,10 +571,10 @@ for fold in range(K_FOLD):
                                   batch_size=BATCH_SIZE,
                                   verbose=VERBOSE,
                                   shuffle=SHUFFLE,
-                                  callbacks=callbacks)
-    model_conjoint_struct_sae.load_weights(model_weight_path)
+                                  callbacks=[callbacks[0]])
+
     # second train
-    model_conjoint_struct_sae.compile(loss='categorical_crossentropy', optimizer=SECOND_OPTIMIZER, metrics=['accuracy'])
+    model_conjoint_struct_sae.compile(loss='categorical_crossentropy', optimizer=get_optimizer(SECOND_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = True
     model_conjoint_struct_sae.fit(x=X_train_conjoint_struct,
                                   y=y_train,
@@ -563,7 +583,6 @@ for fold in range(K_FOLD):
                                   verbose=VERBOSE,
                                   shuffle=SHUFFLE,
                                   callbacks=callbacks)
-    model_conjoint_struct_sae.load_weights(model_weight_path)
 
     # test
     y_test_predict = model_conjoint_struct_sae.predict(X_test_conjoint_struct)
@@ -587,7 +606,7 @@ for fold in range(K_FOLD):
     ensemble_in = Dropout(0.25)(ensemble_in)
     ensemble = Dense(16, kernel_initializer='random_uniform', activation='relu')(ensemble_in)
     ensemble = BatchNormalization()(ensemble)
-    # ensemble = Dropout(0.15)(ensemble)
+    # ensemble = Dropout(0.2)(ensemble)
     ensemble = Dense(8, kernel_initializer='random_uniform', activation='relu')(ensemble)
     ensemble = BatchNormalization()(ensemble)
     # ensemble = Dropout(0.2)(ensemble)
@@ -596,11 +615,15 @@ for fold in range(K_FOLD):
         inputs=model_conjoint_sae.input + model_conjoint_struct_sae.input + model_conjoint_cnn.input + model_conjoint_struct_cnn.input,
         outputs=ensemble_out)
 
-    callbacks = get_callback_list(PATIENCES[4], model_weight_path, result_save_path, stage, fold, X_ensemble_test,
+    callbacks = get_callback_list(PATIENCES[4], result_save_path, stage, fold, X_ensemble_test,
                                   y_test)
 
     # first train
-    model_ensemble.compile(loss='categorical_crossentropy', optimizer=FIRST_OPTIMIZER, metrics=['accuracy'])
+    # freeze sub-models
+    if FREEZE_SUB_MODELS:
+        for model in [model_conjoint_sae, model_conjoint_struct_sae, model_conjoint_cnn, model_conjoint_struct_cnn]:
+            control_model_trainable(model, False)
+    model_ensemble.compile(loss='categorical_crossentropy', optimizer=get_optimizer(FIRST_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = False
     model_ensemble.fit(x=X_ensemble_train,
                        y=y_train,
@@ -608,11 +631,13 @@ for fold in range(K_FOLD):
                        batch_size=BATCH_SIZE,
                        verbose=VERBOSE,
                        shuffle=SHUFFLE,
-                       callbacks=callbacks)
-    model_ensemble.load_weights(model_weight_path)
+                       callbacks=[callbacks[0]])
 
     # second train
-    model_ensemble.compile(loss='categorical_crossentropy', optimizer=SECOND_OPTIMIZER, metrics=['accuracy'])
+    # if FREEZE_SUB_MODELS:
+    #     for model in [model_conjoint_sae, model_conjoint_struct_sae, model_conjoint_cnn, model_conjoint_struct_cnn]:
+    #         control_model_trainable(model, True)
+    model_ensemble.compile(loss='categorical_crossentropy', optimizer=get_optimizer(SECOND_OPTIMIZER), metrics=['accuracy'])
     callbacks[0].close_plt_on_train_end = True
     model_ensemble.fit(x=X_ensemble_train,
                        y=y_train,
@@ -621,7 +646,6 @@ for fold in range(K_FOLD):
                        verbose=VERBOSE,
                        shuffle=SHUFFLE,
                        callbacks=callbacks)
-    model_ensemble.load_weights(model_weight_path)
 
     # test
     y_test_predict = model_ensemble.predict(X_ensemble_test)
@@ -636,8 +660,8 @@ for fold in range(K_FOLD):
         metrics_whole[key] += model_metrics[key]
 
     # get rid of the model weights file
-    if os.path.exists(model_weight_path):
-        os.remove(model_weight_path)
+    # if os.path.exists(model_weight_path):
+    #     os.remove(model_weight_path)
 
 print('\nMean metrics in {} fold:\n'.format(K_FOLD))
 out.write('\nMean metrics in {} fold:\n'.format(K_FOLD))

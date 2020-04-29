@@ -56,10 +56,10 @@ def calc_metrics(y_label, y_proba):
     TP = con_matrix[1][1]
     P = TP + FN
     N = TN + FP
-    Sn = TP / P
-    Sp = TN / N
-    Acc = (TP + TN) / (P + N)
-    Pre = (TP) / (TP + FP)
+    Sn = TP / P if P > 0 else 0
+    Sp = TN / N if N > 0 else 0
+    Acc = (TP + TN) / (P + N) if (P + N) > 0 else 0
+    Pre = (TP) / (TP + FP) if (TP+FP) > 0 else 0
     MCC = 0
     tmp = math.sqrt((TP + FP) * (TP + FN)) * math.sqrt((TN + FP) * (TN + FN))
     if tmp != 0:

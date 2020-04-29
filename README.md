@@ -2,7 +2,7 @@
 A hierarchical deep learning model for predicting ncRNA-protein interaction. 
 
 The _sample_, _data_ and _result_ directories contain model codes, tested data sets and generated results, respectively.
-The depended python packages are listed in _requirements.txt_.
+The depended python packages are listed in _requirements.txt_. The package versions should be followed by users in their environments to achieve the supposed performance.
 
 ## How to run
 
