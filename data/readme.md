@@ -24,7 +24,7 @@ GGAAGUAGAUGGUUCAAGUCCAUUUACUUCCACCA
 ### Sequence structure data
 
 Directory *structure* is about the predicted sequence structure data of protein and RNA.
-In *XXX_protein_struct.fa* or *XXX_rna_struct.fa*, each `Protein` or `RNA` name is followed by its predicted sequence structure (two states dot-bracket format) in the next line.
+In *XXX_protein_struct.fa* or *XXX_rna_struct.fa*, each `Protein` or `RNA` name is followed by its predicted sequence structure (3 states of Helix, Sheet and Coil for protein; two states of dot-bracket format for rna) in the next line.
 
 For example, in *RPI1807_rna_struct.fa*, the initial two lines show the predicted sequence structure of RNA `3OVB-C`.
 
