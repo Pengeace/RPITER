@@ -1,6 +1,6 @@
-from keras.layers import Dense, Conv1D, concatenate, BatchNormalization, MaxPooling1D
-from keras.layers import Dropout, Flatten, Input
-from keras.models import Model
+from tensorflow.keras.layers import Dense, Conv1D, concatenate, BatchNormalization, MaxPooling1D
+from tensorflow.keras.layers import Dropout, Flatten, Input
+from tensorflow.keras.models import Model
 
 
 def conjoint_cnn(pro_coding_length, rna_coding_length, vector_repeatition_cnn):
