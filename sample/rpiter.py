@@ -8,11 +8,11 @@ from functools import reduce
 import configparser
 import numpy as np
 import tensorflow as tf
-from keras import optimizers
-from keras.layers import Dense, concatenate, BatchNormalization
-from keras.layers import Dropout
-from keras.models import Model
-from keras.utils import np_utils
+from tensorflow.keras import optimizers
+from tensorflow.keras.layers import Dense, concatenate, BatchNormalization
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.utils import to_categorical
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import StratifiedKFold
@@ -168,13 +168,13 @@ def coding_pairs(pairs, pro_seqs, rna_seqs, pro_structs, rna_structs, PE, RE, ki
             p_conjoint_struct = PE.encode_conjoint_struct(p_seq, p_struct)
             r_conjoint_struct = RE.encode_conjoint_struct(r_seq, r_struct)
 
-            if p_conjoint is 'Error':
+            if type(p_conjoint) == str and p_conjoint == 'Error':
                 print('Skip {} in pair {} according to conjoint coding process.'.format(pr[0], pr))
-            elif r_conjoint is 'Error':
+            elif type(r_conjoint) == str and r_conjoint == 'Error':
                 print('Skip {} in pair {} according to conjoint coding process.'.format(pr[1], pr))
-            elif p_conjoint_struct is 'Error':
+            elif type(p_conjoint_struct) == str and p_conjoint_struct == 'Error':
                 print('Skip {} in pair {} according to conjoint_struct coding process.'.format(pr[0], pr))
-            elif r_conjoint_struct is 'Error':
+            elif type(r_conjoint_struct) == str and r_conjoint_struct == 'Error':
                 print('Skip {} in pair {} according to conjoint_struct coding process.'.format(pr[1], pr))
 
             else:
@@ -276,9 +276,9 @@ def get_callback_list(patience, result_path, stage, fold, X_test, y_test):
 
 def get_optimizer(opt_name):
     if opt_name == 'sgd':
-        return optimizers.sgd(lr=SGD_LEARNING_RATE, momentum=0.5)
+        return optimizers.SGD(learning_rate=SGD_LEARNING_RATE, momentum=0.5)
     elif opt_name == 'adam':
-        return optimizers.adam(lr=ADAM_LEARNING_RATE)
+        return optimizers.Adam(learning_rate=ADAM_LEARNING_RATE)
     else:
         return opt_name
 
@@ -406,9 +406,9 @@ for fold in range(K_FOLD):
     X_test_conjoint_previous = [X[4][0][test], X[4][1][test]]
 
     y_train_mono = y[train]
-    y_train = np_utils.to_categorical(y_train_mono, 2)
+    y_train = to_categorical(y_train_mono, 2)
     y_test_mono = y[test]
-    y_test = np_utils.to_categorical(y_test_mono, 2)
+    y_test = to_categorical(y_test_mono, 2)
 
     X_ensemble_train = X_train_conjoint + X_train_conjoint_struct + X_train_conjoint_cnn + X_train_conjoint_struct_cnn
     X_ensemble_test = X_test_conjoint + X_test_conjoint_struct + X_test_conjoint_cnn + X_test_conjoint_struct_cnn

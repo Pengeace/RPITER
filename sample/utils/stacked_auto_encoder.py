@@ -1,6 +1,6 @@
 import numpy as np
-from keras.layers import Dense, Dropout
-from keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.models import Sequential
 
 
 def train_auto_encoder(X_train, X_test, layers, batch_size=100, nb_epoch=100, activation='sigmoid', optimizer='adam'):

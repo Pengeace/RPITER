@@ -1,6 +1,5 @@
-numpy>=1.8.0
-tensorflow=1.10.0
-keras=2.2.2
-matplotlib>=2.0.0
-scikit-learn>=0.18.1
-h5py>=2.7.0
+numpy
+tensorflow
+matplotlib
+scikit-learn
+h5py

@@ -6,7 +6,7 @@ The depended python packages are listed in _requirements.txt_. The package versi
 
 ## How to run
 
-The program is in Python 3.6 using [Keras](https://keras.io/) and [Tensorflow](https://www.tensorflow.org/) backends. Use the below bash command to run RPITER.
+The program is in Python >=3.7 using [Keras](https://keras.io/) and [Tensorflow](https://www.tensorflow.org/) backends. Use the below bash command to run RPITER.
 
 ```bash
     python rpiter.py -d dataset
